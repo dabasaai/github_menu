@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive GitHub repo selector — browse your repos and clone the one you pick."""
+"""gm — Interactive GitHub repo selector. Clone your repos from anywhere."""
 
 import json
 import os
@@ -10,12 +10,10 @@ from urllib.error import HTTPError
 
 
 def detect_platform():
-    """Detect OS and package manager."""
     system = sys.platform
     if system == "darwin":
         return "mac"
     if system.startswith("linux"):
-        # Check common package managers
         for cmd, name in [("apt", "debian"), ("yum", "rhel"), ("dnf", "fedora"), ("pacman", "arch")]:
             if subprocess.run(["which", cmd], capture_output=True).returncode == 0:
                 return name
@@ -24,7 +22,6 @@ def detect_platform():
 
 
 def install_gh():
-    """Auto-install gh CLI based on platform."""
     platform = detect_platform()
     install_cmds = {
         "mac": ["brew", "install", "gh"],
@@ -33,12 +30,10 @@ def install_gh():
         "fedora": ["sudo", "dnf", "install", "-y", "gh"],
         "arch": ["sudo", "pacman", "-S", "--noconfirm", "github-cli"],
     }
-
     if platform not in install_cmds:
         print("Error: Cannot auto-install gh on this platform.")
         print("Please install manually: https://cli.github.com")
         sys.exit(1)
-
     cmd = install_cmds[platform]
     print(f"Installing gh CLI ({' '.join(cmd)})...")
     result = subprocess.run(cmd)
@@ -49,8 +44,6 @@ def install_gh():
 
 
 def ensure_gh():
-    """Make sure gh is installed and logged in. Returns token."""
-    # Check if gh exists
     try:
         subprocess.run(["gh", "--version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -61,8 +54,6 @@ def ensure_gh():
         else:
             print("Aborted.")
             sys.exit(1)
-
-    # Check if logged in
     result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
     if result.returncode != 0 or not result.stdout.strip():
         print("gh CLI is not logged in.\n")
@@ -72,22 +63,17 @@ def ensure_gh():
             print("Error: Login failed.")
             sys.exit(1)
         result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-
     return result.stdout.strip()
 
 
 def get_token():
-    # 1. 優先用環境變數
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         return token
-
-    # 2. 自動安裝 gh + 登入
     return ensure_gh()
 
 
 def fetch_repos(token):
-    """Fetch all repos for the authenticated user via GitHub API."""
     repos = []
     page = 1
     while True:
@@ -100,11 +86,10 @@ def fetch_repos(token):
                 batch = json.loads(resp.read().decode())
         except HTTPError as e:
             if e.code == 401:
-                print("Error: Invalid or expired GITHUB_TOKEN.")
+                print("Error: Invalid or expired token.")
             else:
                 print(f"Error: GitHub API returned {e.code}")
             sys.exit(1)
-
         if not batch:
             break
         for r in batch:
@@ -131,18 +116,15 @@ def display_menu(repos):
 
 
 def select_owner(repos):
-    """Let user pick an owner/org to filter repos."""
     owners = sorted(set(r["nameWithOwner"].split("/")[0] for r in repos))
     if len(owners) <= 1:
         return repos
-
     print("\n  Select account/org:\n")
     print(f"    0) All ({len(repos)} repos)")
     for i, owner in enumerate(owners, 1):
         count = sum(1 for r in repos if r["nameWithOwner"].startswith(owner + "/"))
         print(f"    {i}) {owner} ({count} repos)")
     print()
-
     while True:
         choice = input("  [number | q to quit]: ").strip()
         if choice.lower() == "q":
@@ -159,6 +141,13 @@ def select_owner(repos):
 
 
 def main():
+    clone_dest = os.getcwd()
+    if len(sys.argv) > 1:
+        clone_dest = os.path.abspath(sys.argv[1])
+        if not os.path.isdir(clone_dest):
+            print(f"Error: Directory '{clone_dest}' does not exist.")
+            sys.exit(1)
+
     token = get_token()
 
     print("Fetching your GitHub repos...")
@@ -168,6 +157,7 @@ def main():
         sys.exit(0)
 
     print(f"Found {len(repos)} repos.")
+    print(f"Clone to: {clone_dest}")
 
     repos = select_owner(repos)
     filtered = repos
@@ -198,12 +188,12 @@ def main():
 
         repo = filtered[idx]
         name = repo["nameWithOwner"]
-        clone_dir = name.split("/")[-1]
+        clone_dir = os.path.join(clone_dest, name.split("/")[-1])
 
         if os.path.isdir(clone_dir):
             print(f"  Directory '{clone_dir}' already exists, skipping clone.")
         else:
-            print(f"  Cloning {name}...")
+            print(f"  Cloning {name} -> {clone_dir}")
             clone_url = f"https://{token}@github.com/{name}.git"
             subprocess.run(["git", "clone", clone_url, clone_dir], check=False)
 
