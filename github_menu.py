@@ -49,13 +49,30 @@ def gh_get_token():
     result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
-    # 舊版用 gh auth status -t 從 stderr 解析
+    # 舊版用 gh auth status -t，從 stdout+stderr 找 Token 或 token
     result = subprocess.run(["gh", "auth", "status", "-t"], capture_output=True, text=True)
-    for line in (result.stdout + result.stderr).splitlines():
-        line = line.strip()
-        if line.startswith("Token:"):
-            return line.split(":", 1)[1].strip()
+    output = result.stdout + "\n" + result.stderr
+    for line in output.splitlines():
+        stripped = line.strip().lstrip("✓-● ")
+        if stripped.lower().startswith("token:"):
+            token = stripped.split(":", 1)[1].strip()
+            if token:
+                return token
+    # 最後嘗試從 hosts.yml 直接讀取
+    hosts_file = os.path.expanduser("~/.config/gh/hosts.yml")
+    if os.path.isfile(hosts_file):
+        with open(hosts_file) as f:
+            for line in f:
+                if "oauth_token:" in line:
+                    return line.split(":", 1)[1].strip()
     return ""
+
+
+def gh_is_logged_in():
+    """檢查 gh 是否已登入，相容新舊版本。"""
+    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
+    output = result.stdout + "\n" + result.stderr
+    return "Logged in" in output
 
 
 def ensure_gh():
@@ -69,9 +86,7 @@ def ensure_gh():
         else:
             print("Aborted.")
             sys.exit(1)
-    # 檢查是否已登入
-    status = subprocess.run(["gh", "auth", "status"], capture_output=True)
-    if status.returncode != 0:
+    if not gh_is_logged_in():
         print("gh CLI is not logged in.\n")
         print("  Running 'gh auth login'...\n")
         login_result = subprocess.run(["gh", "auth", "login"])
@@ -81,6 +96,7 @@ def ensure_gh():
     token = gh_get_token()
     if not token:
         print("Error: Could not retrieve GitHub token.")
+        print("  Try: gh auth login --with-token")
         sys.exit(1)
     return token
 
