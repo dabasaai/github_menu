@@ -43,6 +43,21 @@ def install_gh():
     print("gh CLI installed successfully.\n")
 
 
+def gh_get_token():
+    """取得 gh 的 token，相容新舊版本。"""
+    # 新版 gh >= 2.17.0 有 gh auth token
+    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    # 舊版用 gh auth status -t 從 stderr 解析
+    result = subprocess.run(["gh", "auth", "status", "-t"], capture_output=True, text=True)
+    for line in (result.stdout + result.stderr).splitlines():
+        line = line.strip()
+        if line.startswith("Token:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
 def ensure_gh():
     try:
         subprocess.run(["gh", "--version"], capture_output=True, check=True)
@@ -54,16 +69,20 @@ def ensure_gh():
         else:
             print("Aborted.")
             sys.exit(1)
-    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-    if result.returncode != 0 or not result.stdout.strip():
+    # 檢查是否已登入
+    status = subprocess.run(["gh", "auth", "status"], capture_output=True)
+    if status.returncode != 0:
         print("gh CLI is not logged in.\n")
         print("  Running 'gh auth login'...\n")
         login_result = subprocess.run(["gh", "auth", "login"])
         if login_result.returncode != 0:
             print("Error: Login failed.")
             sys.exit(1)
-        result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-    return result.stdout.strip()
+    token = gh_get_token()
+    if not token:
+        print("Error: Could not retrieve GitHub token.")
+        sys.exit(1)
+    return token
 
 
 def get_token():

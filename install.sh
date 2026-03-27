@@ -57,7 +57,7 @@ fi
 
 # 5. Check gh auth
 if command -v gh &>/dev/null; then
-    if ! gh auth token &>/dev/null; then
+    if ! gh auth status &>/dev/null; then
         echo
         echo "gh CLI not logged in. Running 'gh auth login'..."
         gh auth login
