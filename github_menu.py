@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gm — Interactive GitHub repo selector. Clone your repos from anywhere."""
+"""gm — Interactive GitHub/Gitea repo selector. Clone your repos from anywhere."""
 
 import json
 import os
@@ -7,6 +7,9 @@ import subprocess
 import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+
+GITEA_URL = "https://gitea.gsct.tw"
+GITEA_TOKEN_FILE = os.path.expanduser("~/.config/gm/gitea_token")
 
 
 def detect_platform():
@@ -101,14 +104,37 @@ def ensure_gh():
     return token
 
 
-def get_token():
+def get_github_token():
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         return token
     return ensure_gh()
 
 
-def fetch_repos(token):
+def get_gitea_token():
+    token = os.environ.get("GITEA_TOKEN")
+    if token:
+        return token
+    if os.path.isfile(GITEA_TOKEN_FILE):
+        with open(GITEA_TOKEN_FILE) as f:
+            token = f.read().strip()
+        if token:
+            return token
+    print(f"\n  Gitea token 未設定（{GITEA_URL}）")
+    print("  請到 Gitea > Settings > Applications > Generate New Token\n")
+    token = input("  貼上 token: ").strip()
+    if not token:
+        print("Aborted.")
+        sys.exit(1)
+    os.makedirs(os.path.dirname(GITEA_TOKEN_FILE), exist_ok=True)
+    with open(GITEA_TOKEN_FILE, "w") as f:
+        f.write(token)
+    os.chmod(GITEA_TOKEN_FILE, 0o600)
+    print(f"  Token 已儲存至 {GITEA_TOKEN_FILE}\n")
+    return token
+
+
+def fetch_github_repos(token):
     repos = []
     page = 1
     while True:
@@ -121,7 +147,7 @@ def fetch_repos(token):
                 batch = json.loads(resp.read().decode())
         except HTTPError as e:
             if e.code == 401:
-                print("Error: Invalid or expired token.")
+                print("Error: GitHub token invalid or expired.")
             else:
                 print(f"Error: GitHub API returned {e.code}")
             sys.exit(1)
@@ -132,8 +158,45 @@ def fetch_repos(token):
                 "nameWithOwner": r["full_name"],
                 "description": r.get("description") or "",
                 "isPrivate": r["private"],
+                "source": "github",
+                "clone_url": r["clone_url"],
             })
         if len(batch) < 100:
+            break
+        page += 1
+    return repos
+
+
+def fetch_gitea_repos(token):
+    repos = []
+    page = 1
+    while True:
+        url = f"{GITEA_URL}/api/v1/user/repos?limit=50&page={page}"
+        req = Request(url)
+        req.add_header("Authorization", f"token {token}")
+        try:
+            with urlopen(req) as resp:
+                batch = json.loads(resp.read().decode())
+        except HTTPError as e:
+            if e.code == 401:
+                print("Error: Gitea token invalid or expired.")
+                if os.path.isfile(GITEA_TOKEN_FILE):
+                    os.remove(GITEA_TOKEN_FILE)
+                    print(f"  已刪除 {GITEA_TOKEN_FILE}，請重新執行 gm 設定 token")
+            else:
+                print(f"Error: Gitea API returned {e.code}")
+            sys.exit(1)
+        if not batch:
+            break
+        for r in batch:
+            repos.append({
+                "nameWithOwner": r["full_name"],
+                "description": r.get("description") or "",
+                "isPrivate": r["private"],
+                "source": "gitea",
+                "clone_url": r["clone_url"],
+            })
+        if len(batch) < 50:
             break
         page += 1
     return repos
@@ -143,10 +206,11 @@ def display_menu(repos):
     print()
     for i, r in enumerate(repos, 1):
         private = "🔒" if r["isPrivate"] else "  "
+        source = "[GH]" if r.get("source") == "github" else "[GT]"
         desc = r["description"]
         if len(desc) > 50:
             desc = desc[:47] + "..."
-        print(f"  {private} {i:3d}) {r['nameWithOwner']:<40s} {desc}")
+        print(f"  {private} {source} {i:3d}) {r['nameWithOwner']:<40s} {desc}")
     print()
 
 
@@ -175,6 +239,19 @@ def select_owner(repos):
         print("  Invalid number, try again.")
 
 
+def select_source():
+    print("\n  選擇平台:\n")
+    print("    1) GitHub")
+    print("    2) Gitea")
+    print("    3) 全部")
+    print()
+    while True:
+        choice = input("  [1/2/3]: ").strip()
+        if choice in ("1", "2", "3"):
+            return int(choice)
+        print("  請輸入 1, 2 或 3")
+
+
 def main():
     clone_dest = os.getcwd()
     if len(sys.argv) > 1:
@@ -183,10 +260,19 @@ def main():
             print(f"Error: Directory '{clone_dest}' does not exist.")
             sys.exit(1)
 
-    token = get_token()
+    source = select_source()
 
-    print("Fetching your GitHub repos...")
-    repos = fetch_repos(token)
+    repos = []
+    if source in (1, 3):
+        gh_token = get_github_token()
+        print("Fetching GitHub repos...")
+        repos += fetch_github_repos(gh_token)
+
+    if source in (2, 3):
+        gt_token = get_gitea_token()
+        print("Fetching Gitea repos...")
+        repos += fetch_gitea_repos(gt_token)
+
     if not repos:
         print("No repos found.")
         sys.exit(0)
@@ -229,7 +315,12 @@ def main():
             print(f"  Directory '{clone_dir}' already exists, skipping clone.")
         else:
             print(f"  Cloning {name} -> {clone_dir}")
-            clone_url = f"https://{token}@github.com/{name}.git"
+            if repo.get("source") == "gitea":
+                gt_token = get_gitea_token()
+                clone_url = repo["clone_url"].replace("https://", f"https://{gt_token}@")
+            else:
+                gh_token = get_github_token()
+                clone_url = f"https://{gh_token}@github.com/{name}.git"
             subprocess.run(["git", "clone", clone_url, clone_dir], check=False)
 
         break
