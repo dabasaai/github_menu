@@ -323,6 +323,8 @@ def main():
                 clone_url = f"https://{gh_token}@github.com/{name}.git"
             subprocess.run(["git", "clone", clone_url, clone_dir], check=False)
 
+        # Output marker for shell wrapper to cd into
+        print(f"\n__GM_CD__:{clone_dir}")
         break
 
 

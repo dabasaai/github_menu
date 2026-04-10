@@ -64,5 +64,34 @@ if command -v gh &>/dev/null; then
     fi
 fi
 
+# 6. Add shell wrapper for auto cd
+GM_FUNC='# gm wrapper — auto cd into cloned repo
+gm() {
+    local output
+    output=$(command gm "$@")
+    echo "$output" | grep -v "^__GM_CD__:"
+    local target
+    target=$(echo "$output" | grep "^__GM_CD__:" | cut -d: -f2-)
+    if [ -n "$target" ] && [ -d "$target" ]; then
+        cd "$target"
+    fi
+}'
+
+SHELL_RC=""
+if [ -f "$HOME/.zshrc" ]; then
+    SHELL_RC="$HOME/.zshrc"
+elif [ -f "$HOME/.bashrc" ]; then
+    SHELL_RC="$HOME/.bashrc"
+fi
+
+if [ -n "$SHELL_RC" ]; then
+    if ! grep -q '__GM_CD__' "$SHELL_RC"; then
+        echo "" >> "$SHELL_RC"
+        echo "$GM_FUNC" >> "$SHELL_RC"
+        echo "  Added gm wrapper to $SHELL_RC"
+    fi
+fi
+
 echo
-echo "Done! Run 'gm' to start."
+echo "Done! Restart shell or run: source $SHELL_RC"
+echo "Then run 'gm' to start."
