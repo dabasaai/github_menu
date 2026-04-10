@@ -10,6 +10,7 @@ from urllib.error import HTTPError
 
 GITEA_URL = "https://gitea.gsct.tw"
 GITEA_TOKEN_FILE = os.path.expanduser("~/.config/gm/gitea_token")
+GM_CD_FILE = os.path.expanduser("~/.cache/gm/last_clone_dir")
 
 
 def detect_platform():
@@ -323,8 +324,10 @@ def main():
                 clone_url = f"https://{gh_token}@github.com/{name}.git"
             subprocess.run(["git", "clone", clone_url, clone_dir], check=False)
 
-        # Output marker for shell wrapper to cd into
-        print(f"\n__GM_CD__:{clone_dir}")
+        # Write clone dir to temp file for shell wrapper to cd into
+        os.makedirs(os.path.dirname(GM_CD_FILE), exist_ok=True)
+        with open(GM_CD_FILE, "w") as f:
+            f.write(clone_dir)
         break
 
 

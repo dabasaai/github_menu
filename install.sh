@@ -91,13 +91,17 @@ fi
 # 6. Add shell wrapper for auto cd
 GM_FUNC='# gm wrapper — auto cd into cloned repo
 gm() {
-    local output
-    output=$(command gm "$@")
-    echo "$output" | grep -v "^__GM_CD__:"
-    local target
-    target=$(echo "$output" | grep "^__GM_CD__:" | cut -d: -f2-)
-    if [ -n "$target" ] && [ -d "$target" ]; then
-        cd "$target"
+    local cd_file="$HOME/.cache/gm/last_clone_dir"
+    rm -f "$cd_file"
+    command gm "$@"
+    if [ -f "$cd_file" ]; then
+        local target
+        target=$(cat "$cd_file")
+        rm -f "$cd_file"
+        if [ -n "$target" ] && [ -d "$target" ]; then
+            cd "$target"
+            echo "  cd $target"
+        fi
     fi
 }'
 
@@ -109,7 +113,7 @@ elif [ -f "$HOME/.bashrc" ]; then
 fi
 
 if [ -n "$SHELL_RC" ]; then
-    if ! grep -q '__GM_CD__' "$SHELL_RC"; then
+    if ! grep -q 'last_clone_dir' "$SHELL_RC"; then
         echo "" >> "$SHELL_RC"
         echo "$GM_FUNC" >> "$SHELL_RC"
         echo "  Added gm wrapper to $SHELL_RC"
