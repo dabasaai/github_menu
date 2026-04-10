@@ -3,8 +3,27 @@ set -e
 
 INSTALL_DIR="$HOME/.local/bin"
 REPO_URL="https://raw.githubusercontent.com/dabasaai/github_menu/main/github_menu.py"
+REPO_URL_COMPAT="https://raw.githubusercontent.com/dabasaai/github_menu/main/github_menu_compat.py"
 
 echo "=== gm installer ==="
+echo
+
+# 0. Detect Python version — use compat version for < 3.7
+PY_CMD="python3"
+if ! command -v python3 &>/dev/null; then
+    PY_CMD="python"
+fi
+
+PY_MINOR=$($PY_CMD -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo "0")
+PY_MAJOR=$($PY_CMD -c 'import sys; print(sys.version_info.major)' 2>/dev/null || echo "0")
+
+if [ "$PY_MAJOR" -lt 3 ] || ([ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 7 ]); then
+    USE_COMPAT=1
+    echo "Detected Python $PY_MAJOR.$PY_MINOR (< 3.7) — installing compatibility version."
+else
+    USE_COMPAT=0
+    echo "Detected Python $PY_MAJOR.$PY_MINOR — installing standard version."
+fi
 echo
 
 # 1. Create ~/.local/bin if needed
@@ -32,8 +51,13 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 # 3. Download gm
-echo "Downloading gm..."
-curl -fsSL "$REPO_URL" -o "$INSTALL_DIR/gm"
+if [ "$USE_COMPAT" -eq 1 ]; then
+    echo "Downloading gm (compat version for Python < 3.7)..."
+    curl -fsSL "$REPO_URL_COMPAT" -o "$INSTALL_DIR/gm"
+else
+    echo "Downloading gm..."
+    curl -fsSL "$REPO_URL" -o "$INSTALL_DIR/gm"
+fi
 chmod +x "$INSTALL_DIR/gm"
 
 # 4. Check gh CLI
